@@ -11,8 +11,8 @@ function scan_css_single(css_stylesheet)
     var selectors   = [];
     var selectorcss = [];
     var rules       = getCSSRules(css_stylesheet);
-    console.log("New CSS Found:");
-    console.log(css_stylesheet);
+    //console.log("New CSS Found:");
+    //console.log(css_stylesheet);
 
     if(rules == null)
     {
@@ -29,14 +29,21 @@ function scan_css_single(css_stylesheet)
         // Parse same-origin stylesheet
         //console.log("DOM stylesheet...");
         var _selectors = parseCSSRules(rules);
-        filter_css(_selectors[0], _selectors[1]);
+        var filter_retval = filter_css(_selectors[0], _selectors[1]);
+
+        // nothing sanitized, OK to not scan again
+        if(filter_retval == 0)
+        {
+            // record hashed stylesheet here
+            set_seen_hash(css_stylesheet.sheet);
+        }
 
         if(checkCSSDisabled(css_stylesheet))
         {
             enableCSS(css_stylesheet);
         }
 
-        decrementSanitize();
+        //decrementSanitize();
     }
 }
 
@@ -69,7 +76,15 @@ function scan_css()
             // Parse same-origin stylesheet
             //console.log("DOM stylesheet...");
             var _selectors = parseCSSRules(rules);
-            filter_css(_selectors[0], _selectors[1]);
+
+            var filter_retval = filter_css(_selectors[0], _selectors[1]);
+
+            // nothing sanitized, OK to not scan again
+            if(filter_retval == 0)
+            {
+                // record hashed stylesheet here
+                set_seen_hash(sheets[i]);
+            }
 
             if(checkCSSDisabled(sheets[i]))
             {
@@ -110,7 +125,15 @@ function handleImportedCSS(rules)
                     // Parse imported DOM sheet
                     //console.log("Imported DOM CSS...");
                     var _selectors = parseCSSRules(_rules);
-                    filter_css(_selectors[0], _selectors[1]);
+                    var filter_retval = filter_css(_selectors[0], _selectors[1]);
+
+                    // nothing sanitized, OK to not scan again
+                    if(filter_retval == 0)
+                    {
+                        // record hashed stylesheet here
+                        set_seen_hash(rules[r].styleSheet);
+                    }
+
                     decrementSanitize();
                 }
             }
@@ -186,6 +209,7 @@ function parseCSSRules(rules)
                 )
               )
             {
+                //CSS Exfil Protection blocked
                 selectors.push(rules[r].selectorText);
                 selectorcss.push(cssText);
             }
@@ -214,6 +238,13 @@ function parseCSSRules(rules)
 
 function getCrossDomainCSS(orig_sheet)
 {
+    // This may occur if an injected link stylesheet doesn't exist
+    if(orig_sheet == null)
+    {
+        decrementSanitize();
+        return;
+    }
+
 	var rules;
     var url = orig_sheet.href;
 
@@ -251,7 +282,14 @@ function getCrossDomainCSS(orig_sheet)
             handleImportedCSS(rules);
 
             var _selectors = parseCSSRules(rules);
-            filter_css(_selectors[0], _selectors[1]);
+            var filter_retval = filter_css(_selectors[0], _selectors[1]);
+
+            // nothing sanitized, OK to not scan again
+            if(filter_retval == 0)
+            {
+                // record hashed stylesheet here
+                set_seen_hash(sheet);
+            }
 
             // Remove stylesheet
             sheet.disabled = true;
@@ -273,26 +311,33 @@ function getCrossDomainCSS(orig_sheet)
 
 
 
+// Return 0 if nothing was sanitized, 1 otherwise
 function filter_css(selectors, selectorcss)
 {
+    var retval = 0;
+
     // Loop through found selectors and modify CSS if necessary
     for(s in selectors)
     {
         if( selectorcss[s].indexOf('background') !== -1 )
         {
             filter_sheet.sheet.insertRule( selectors[s] +" { background-image:none !important; }", filter_sheet.sheet.cssRules.length);
+            retval = 1;
         }
         if( selectorcss[s].indexOf('list-style') !== -1 )
         {
             filter_sheet.sheet.insertRule( selectors[s] +" { list-style: inherit !important; }", filter_sheet.sheet.cssRules.length);
+            retval = 1;
         }
         if( selectorcss[s].indexOf('cursor') !== -1 )
         {
             filter_sheet.sheet.insertRule( selectors[s] +" { cursor: auto !important; }", filter_sheet.sheet.cssRules.length);
+            retval = 1;
         }
         if( selectorcss[s].indexOf('content') !== -1 )
         {
             filter_sheet.sheet.insertRule( selectors[s] +" { content: normal !important; }", filter_sheet.sheet.cssRules.length);
+            retval = 1;
         }
 
         // Causes performance issue if large amounts of resources are blocked, just use when debugging
@@ -302,6 +347,8 @@ function filter_css(selectors, selectorcss)
         block_count++;
     }
     chrome.extension.sendMessage(block_count.toString());
+
+    return retval;
 }
 
 
@@ -356,6 +403,15 @@ function buildContentLoadBlockerCSS()
 
 
 
+function set_seen_hash(sheet)
+{
+    var style_hash = btoa(sheet);
+    console.log(style_hash);
+    seen_hash[style_hash] = 1;
+}
+
+
+
 /*
  *  Initialize
  */
@@ -367,58 +423,103 @@ var block_count       = 0;      // Number of blocked CSSRules
 var seen_url          = [];     // Keep track of scanned cross-domain URL's
 var seen_hash         = {};
 
-/*
+
 // Create an observer instance to monitor CSS injection
 var observer = new MutationObserver(function(mutations) {
     mutations.forEach(function(mutation) {
-        return;
 
-        setTimeout(function observerScan() { 
-            console.log("async observer call...");
-            if( 
-                ((mutation.addedNodes.length > 0) && (mutation.addedNodes[0].localName == "style")) ||
-                ((mutation.addedNodes.length > 0) && (mutation.addedNodes[0].localName == "link")) ||
-                (mutation.attributeName == "style") || 
-                (mutation.attributeName == "link") 
+
+
+        if (
+              ((mutation.addedNodes.length > 0) && (mutation.addedNodes[0].localName == "style")) ||
+              ((mutation.addedNodes.length > 0) && (mutation.addedNodes[0].localName == "link")) ||
+              (mutation.attributeName == "style") || 
+              (mutation.attributeName == "link") 
+           )
+        {
+
+            // Ensure we aren't re-scanning our injected stylesheet
+            if(
+                (mutation.addedNodes.length > 0) && 
+                (mutation.addedNodes[0].classList.length > 0) && 
+                (mutation.addedNodes[0].classList == "__css_exfil_protection_filtered_styles")
               )
             {
-                var skipscan = 0;
-                var style_hash = btoa(mutation.addedNodes[0]);
-                console.log(style_hash);
+                // do nothing
+                return;
+            }
 
-                // check to see if we have already scanned this exact CSS
-                if(seen_hash[style_hash] != null)
-                {
-                    skipscan = 1;
-                }
-                else
-                {
-                    // Set this now for testing... need to only set this if the CSS has no sanitization
-                    seen_hash[style_hash] = 1;
-                }
 
-                // Ensure we aren't re-scanning our injected stylesheet
-                if( (mutation.addedNodes.length > 0) && (mutation.addedNodes[0].classList.length > 0) )
-                {
-                    // Skip the scan on injected filter sheet
-                    if(mutation.addedNodes[0].classList == "__css_exfil_protection_filtered_styles")
+            //setTimeout(function observerScan() { 
+                //console.log("async observer call...");
+                    var skipscan = 0;
+                    var style_hash = btoa(mutation.addedNodes[0]);
+
+                    // check to see if we have already scanned this exact CSS
+                    if(seen_hash[style_hash] != null)
                     {
                         skipscan = 1;
                     }
-                }
+                    else
+                    {
+                        // Set this now for testing... need to only set this if the CSS has no sanitization
+                        //console.log(style_hash);
+                        //seen_hash[style_hash] = 1;
+                    }
 
-                if(skipscan == 0)
-                {
-                    scan_css_single( document.styleSheets[document.styleSheets.length - 1] );
-                }
-            }
-        }, 0);
+                    /*
+                    // Ensure we aren't re-scanning our injected stylesheet
+                    if( (mutation.addedNodes.length > 0) && (mutation.addedNodes[0].classList.length > 0) )
+                    {
+                        // Skip the scan on injected filter sheet
+                        if(mutation.addedNodes[0].classList == "__css_exfil_protection_filtered_styles")
+                        {
+                            skipscan = 1;
+                        }
+                    }
+                    */
+
+                    if(skipscan == 0)
+                    {
+                        if(mutation.addedNodes.length > 0)
+                        {
+                            if(mutation.addedNodes[0].sheet == null)
+                            {
+                                //console.log("Sheet not initialized yet...");
+                                setTimeout(function checkSheetInit() { 
+                                    //console.log("checking again...");
+                                    
+                                    if(mutation.addedNodes[0].sheet == null)
+                                    {
+                                        setTimeout(checkSheetInit, 10);
+                                    }
+                                    else
+                                    {
+                                        scan_css_single( mutation.addedNodes[0].sheet );
+                                    }
+                                }, 10);
+                            }
+                            else
+                            {
+                                scan_css_single( mutation.addedNodes[0].sheet );
+                            }
+
+                        }
+                        else
+                        {
+                            // If we get here it means that it's due to an inline style which 
+                            // isn't something that needs to be sanitized
+                            //console.log(mutation);
+                        }
+                    }
+            //}, 0);
+        }
     });
 });
-*/
+
 
 // configuration of the observer:
-//var observer_config = { attributes: true, childList: true, subtree: true, characterData: true, attributeFilter: ["style","link"] }
+var observer_config = { attributes: true, childList: true, subtree: true, characterData: true, attributeFilter: ["style","link"] }
 
 
 
@@ -454,7 +555,7 @@ window.addEventListener("DOMContentLoaded", function() {
             scan_css();
 
             // monitor document for delayed CSS injection
-            //observer.observe(document, observer_config);
+            observer.observe(document, observer_config);
         }
         else
 	    {
