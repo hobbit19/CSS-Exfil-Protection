@@ -11,13 +11,13 @@ function scan_css_single(css_stylesheet)
     var selectors   = [];
     var selectorcss = [];
     var rules       = getCSSRules(css_stylesheet);
-    //console.log("New CSS Found:");
+    console.log("New CSS Found:");
     //console.log(css_stylesheet);
 
     if(rules == null)
     {
         // Retrieve and parse cross-domain stylesheet
-        //console.log("Cross domain stylesheet: "+ css_stylesheet.href);
+        console.log("Cross domain stylesheet: "+ css_stylesheet.href);
         incrementSanitize();
         getCrossDomainCSS(css_stylesheet);
     }
@@ -27,7 +27,7 @@ function scan_css_single(css_stylesheet)
         handleImportedCSS(rules);
 
         // Parse same-origin stylesheet
-        //console.log("DOM stylesheet...");
+        console.log("DOM stylesheet...");
         var _selectors = parseCSSRules(rules);
         var filter_retval = filter_css(_selectors[0], _selectors[1]);
 
@@ -61,10 +61,13 @@ function scan_css()
 	    var selectorcss = [];
 	    var rules       = getCSSRules(sheets[i]);
 
+        console.log(sheets[i]);
+        //console.log(sheets[i].sheet);
+
         if(rules == null)
         {
             // Retrieve and parse cross-domain stylesheet
-            //console.log("Cross domain stylesheet: "+ sheets[i].href);
+            console.log("Cross domain stylesheet: "+ sheets[i].href);
             incrementSanitize();
             getCrossDomainCSS(sheets[i]);
         }
@@ -74,7 +77,7 @@ function scan_css()
             handleImportedCSS(rules);
 
             // Parse same-origin stylesheet
-            //console.log("DOM stylesheet...");
+            console.log("DOM stylesheet...");
             var _selectors = parseCSSRules(rules);
 
             var filter_retval = filter_css(_selectors[0], _selectors[1]);
@@ -83,7 +86,7 @@ function scan_css()
             if(filter_retval == 0)
             {
                 // record hashed stylesheet here
-                set_seen_hash(sheets[i]);
+                set_seen_hash(sheets[i].sheet);
             }
 
             if(checkCSSDisabled(sheets[i]))
@@ -111,19 +114,19 @@ function handleImportedCSS(rules)
                 incrementSanitize();
 
                 // Found an imported CSS Stylesheet
-                //console.log("Imported CSS...");
+                console.log("Imported CSS...");
 
                 var _rules = getCSSRules(rules[r].styleSheet);
                 if(_rules == null)
                 {
                     // Parse imported cross domain sheet
-                    //console.log("Imported Cross Domain CSS...");
+                    console.log("Imported Cross Domain CSS...");
                     getCrossDomainCSS(rules[r].styleSheet);
                 }
                 else
                 {
                     // Parse imported DOM sheet
-                    //console.log("Imported DOM CSS...");
+                    console.log("Imported DOM CSS...");
                     var _selectors = parseCSSRules(_rules);
                     var filter_retval = filter_css(_selectors[0], _selectors[1]);
 
@@ -131,7 +134,7 @@ function handleImportedCSS(rules)
                     if(filter_retval == 0)
                     {
                         // record hashed stylesheet here
-                        set_seen_hash(rules[r].styleSheet);
+                        set_seen_hash(rules[r].styleSheet.sheet);
                     }
 
                     decrementSanitize();
@@ -163,8 +166,8 @@ function getCSSRules(_sheet)
 	{
 	    if(e.name !== "SecurityError") 
 	    {
-            //console.log("Error loading rules:");
-            //console.log(e);
+            console.log("Error loading rules:");
+            console.log(e);
 	        //throw e;
 	    }
 	}
@@ -288,7 +291,7 @@ function getCrossDomainCSS(orig_sheet)
             if(filter_retval == 0)
             {
                 // record hashed stylesheet here
-                set_seen_hash(sheet);
+                set_seen_hash(sheet.sheet);
             }
 
             // Remove stylesheet
@@ -341,7 +344,7 @@ function filter_css(selectors, selectorcss)
         }
 
         // Causes performance issue if large amounts of resources are blocked, just use when debugging
-        //console.log("CSS Exfil Protection blocked: "+ selectors[s]);
+        console.log("CSS Exfil Protection blocked: "+ selectors[s]);
 
         // Update background.js with bagde count
         block_count++;
@@ -401,10 +404,13 @@ function buildContentLoadBlockerCSS()
     return csstext;
 }
 
+// https://www.amazon.ca/L-Surprise-Confetti-Pop-Collectible/dp/B079HM1VWD/ref=pd_rhf_dp_s_cp_0_3?_encoding=UTF8&pd_rd_i=B079HM1VWD&pd_rd_r=JWRAYJM1KPATNQ8XPNAB&pd_rd_w=1JHKy&pd_rd_wg=sxYz2&psc=1&refRID=JWRAYJM1KPATNQ8XPNAB
 
 
 function set_seen_hash(sheet)
 {
+    return;
+    console.log(sheet);
     var style_hash = btoa(sheet);
     console.log(style_hash);
     seen_hash[style_hash] = 1;
@@ -424,6 +430,7 @@ var seen_url          = [];     // Keep track of scanned cross-domain URL's
 var seen_hash         = {};
 
 
+/*
 // Create an observer instance to monitor CSS injection
 var observer = new MutationObserver(function(mutations) {
     mutations.forEach(function(mutation) {
@@ -467,18 +474,6 @@ var observer = new MutationObserver(function(mutations) {
                         //seen_hash[style_hash] = 1;
                     }
 
-                    /*
-                    // Ensure we aren't re-scanning our injected stylesheet
-                    if( (mutation.addedNodes.length > 0) && (mutation.addedNodes[0].classList.length > 0) )
-                    {
-                        // Skip the scan on injected filter sheet
-                        if(mutation.addedNodes[0].classList == "__css_exfil_protection_filtered_styles")
-                        {
-                            skipscan = 1;
-                        }
-                    }
-                    */
-
                     if(skipscan == 0)
                     {
                         if(mutation.addedNodes.length > 0)
@@ -519,8 +514,8 @@ var observer = new MutationObserver(function(mutations) {
 
 
 // configuration of the observer:
-var observer_config = { attributes: true, childList: true, subtree: true, characterData: true, attributeFilter: ["style","link"] }
-
+var observer_config = { attributes: true, childList: true, subtree: true, characterData: true, attributeFilter: ["style","link"] };
+*/
 
 
 
@@ -530,7 +525,7 @@ window.addEventListener("DOMContentLoaded", function() {
 
     // Create temporary stylesheet that will block early loading of resources we may want to block
     css_load_blocker  = document.createElement('style');
-    css_load_blocker.innerText = buildContentLoadBlockerCSS();
+    //css_load_blocker.innerText = buildContentLoadBlockerCSS();
     css_load_blocker.className = "__tmp_css_exfil_protection_load_blocker";
     document.head.appendChild(css_load_blocker);
 
@@ -543,11 +538,30 @@ window.addEventListener("DOMContentLoaded", function() {
 
 	    if(items.enable_plugin == 1)
         {
+            // Plugin enabled
+
+            // Disable all CSS and Re-enable body (style set to none in plugin css-exfil.css)
+            for (var i=0; i < document.styleSheets.length; i++) 
+            {
+                disableCSS(document.styleSheets[i]);
+            }
+
+            // Enable body -- use timeout to make call asynchronous
+            setTimeout(function enableBody() { 
+                document.getElementsByTagName("BODY")[0].style.display = "block";
+            }, 0);
+
+
             // Create stylesheet that will contain our filtering CSS (if any is necessary)
             filter_sheet = document.createElement('style');
             filter_sheet.className = "__css_exfil_protection_filtered_styles";
             filter_sheet.innerText = "";
             document.head.appendChild(filter_sheet);
+
+            // Disable CSS load blocker as soon as possible
+            // Should provide better page rendering, but
+            // still provide load blocking of potentially harmful resources
+            //disableAndRemoveCSS(css_load_blocker);
 
             // Increment once before we scan, just in case decrement is called too quickly
             incrementSanitize();
@@ -555,12 +569,15 @@ window.addEventListener("DOMContentLoaded", function() {
             scan_css();
 
             // monitor document for delayed CSS injection
-            observer.observe(document, observer_config);
+            //observer.observe(document, observer_config);
         }
         else
 	    {
             //console.log("Disabling CSS Exfil Protection");
             css_load_blocker.disabled = true;
+
+            // disable icon
+            chrome.extension.sendMessage('disabled');
 	    }
     });
 

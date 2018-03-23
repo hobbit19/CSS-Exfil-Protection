@@ -287,7 +287,7 @@ function filter_css(selectors, selectorcss)
         }
 
         // Causes performance issue if large amounts of resources are blocked, just use when debugging
-        //console.log("CSS Exfil Protection blocked: "+ selectors[s]);
+        console.log("CSS Exfil Protection blocked: "+ selectors[s]);
 
         // Update background.js with bagde count
         block_count++;
@@ -395,12 +395,12 @@ function getCrossDomainCSS(orig_sheet)
 
 function disableCSS(_sheet)
 {
-    //console.log("Disabled CSS: "+ _sheet.href);
+    console.log("Disabled CSS: "+ _sheet.href);
     _sheet.disabled = true;
 }
 function enableCSS(_sheet)
 {
-    //console.log("Enabled CSS: "+ _sheet.href);
+    console.log("Enabled CSS: "+ _sheet.href);
     _sheet.disabled = false;
     
     // Some sites like news.google.com require a resize event to properly render all elements after re-enabling CSS
@@ -437,7 +437,9 @@ function decrementSanitize()
 
 function buildContentLoadBlockerCSS()
 {
-    var csstext = "input,input ~ * { background-image:none !important; list-style: inherit !important; cursor: auto !important; content:normal !important; } input::before,input::after,input ~ *::before, input ~ *::after { content:normal !important; }";
+    //var csstext = "input,input ~ * { background-image:none !important; list-style: inherit !important; cursor: auto !important; content:normal !important; } input::before,input::after,input ~ *::before, input ~ *::after { content:normal !important; }";
+    //var csstext = "html { background: #000; }";
+    var csstext = "html { background: #fff; }";
     return csstext;
 }
 
@@ -455,8 +457,9 @@ var block_count       = 0;      // Number of blocked CSSRules
 var seen_url          = [];     // Keep track of scanned cross-domain URL's
 
 // MG Commenting for now due to performance issues
-/*
+
 // Create an observer instance to monitor CSS injection
+/*
 var observer = new MutationObserver(function(mutations) {
     mutations.forEach(function(mutation) {
         if( 
@@ -466,14 +469,18 @@ var observer = new MutationObserver(function(mutations) {
             ((mutation.addedNodes.length > 0) && (mutation.addedNodes[0].localName == "link"))
           )
         {
-            scan_css_single( document.styleSheets[document.styleSheets.length - 1] );
+            //console.log(mutation);
+            //scan_css_single( document.styleSheets[document.styleSheets.length - 1] );
         }
     });
 });
 
 // configuration of the observer:
-var observer_config = { attributes: true, childList: true, subtree: true, characterData: true, attributeFilter: ["style","link"] }
+var observer_config = { attributes: true, childList: true, subtree: true, characterData: true, attributeFilter: ["style","link"] };
 */
+
+
+
 
 
 // Run as soon as the DOM has been loaded
@@ -481,9 +488,10 @@ window.addEventListener("DOMContentLoaded", function() {
 
     // Create temporary stylesheet that will block early loading of resources we may want to block
     css_load_blocker  = document.createElement('style');
-    css_load_blocker.innerText = buildContentLoadBlockerCSS();
+    //css_load_blocker.innerText = buildContentLoadBlockerCSS();
     css_load_blocker.className = "__tmp_css_exfil_protection_load_blocker";
     document.head.appendChild(css_load_blocker);
+
 
     // Zero out badge
     browser.runtime.sendMessage(block_count.toString());
@@ -496,6 +504,18 @@ window.addEventListener("DOMContentLoaded", function() {
         {
             // Plugin is enabled
 
+            // Disable all CSS and Re-enable body (style set to none in plugin css-exfil.css)
+            for (var i=0; i < document.styleSheets.length; i++) 
+            {
+                disableCSS(document.styleSheets[i]);
+            }
+
+            // Enable body -- use timeout to make call asynchronous
+            setTimeout(function enableBody() { 
+                document.getElementsByTagName("BODY")[0].style.display = "block";
+            }, 0);
+
+
             // Create stylesheet that will contain our filtering CSS (if any is necessary)
             filter_sheet = document.createElement('style');
             filter_sheet.className = "__css_exfil_protection_filtered_styles";
@@ -505,6 +525,11 @@ window.addEventListener("DOMContentLoaded", function() {
             // Increment once before we scan, just in case decrement is called too quickly
             incrementSanitize();
 
+            // Disable CSS load blocker as soon as possible
+            // Should provide better page rendering, but
+            // still provide load blocking of potentially harmful resources
+            //disableAndRemoveCSS(css_load_blocker);
+
             scan_css();
 
             // MG Commenting for now due to performance issues
@@ -513,9 +538,14 @@ window.addEventListener("DOMContentLoaded", function() {
         }
         else
         {
+            document.getElementsByTagName("BODY")[0].style.display = "block";
+
             // Plugin is disabled... enable page without sanitizing
             css_load_blocker.disabled = true;
             css_load_blocker.parentNode.removeChild(css_load_blocker);
+
+            // disable icon
+            browser.runtime.sendMessage('disabled');
         }
     });
 

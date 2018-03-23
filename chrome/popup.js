@@ -9,7 +9,12 @@ function save_options()
   	if(!document.getElementById('enable_plugin').checked)
 	{
 		enable_plugin = 0;
+        chrome.extension.sendMessage('disabled');
 	}
+    else
+    {
+        chrome.extension.sendMessage('enabled');
+    }
  
   	chrome.storage.local.set({
   	    enable_plugin: enable_plugin

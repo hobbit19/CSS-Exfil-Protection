@@ -35,6 +35,7 @@
   },
 
   "content_scripts": [{
+    "css": ["css-exfil.css"],
     "js": ["content.js"],
     "matches": ["<all_urls>"],
     "run_at": "document_start"
